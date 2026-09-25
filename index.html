@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TRACE v1.3.0 — acceleration to deflection</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
+<style>
+  :root{
+    --bg:#12161C;
+    --panel:#1A1F27;
+    --panel-2:#20262F;
+    --line:#2B323C;
+    --line-soft:#232932;
+    --ink:#DDE3EA;
+    --ink-dim:#8B95A2;
+    --ink-faint:#5C6671;
+    --accent:#7FB5C4;
+    --accent-press:#9FCAD7;
+    --ch-accel:#E8A33D;
+    --ch-vel:#54C3D8;
+    --ch-disp:#C77DD6;
+    --warn:#D98A6A;
+    --ok:#7FB58C;
+    --mono: ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans: system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    font-size:14px; line-height:1.45; -webkit-font-smoothing:antialiased;
+  }
+  [hidden]{display:none!important}
+  header{
+    display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    padding:14px 20px; border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#161B22,#12161C);
+  }
+  .brand{display:flex; align-items:baseline; gap:10px; user-select:none}
+  .brand .mark{font-family:var(--mono); font-weight:700; letter-spacing:.22em; font-size:15px; color:var(--ink)}
+  .brand .ver{font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); letter-spacing:.06em}
+  .brand .sub{font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-faint)}
+  .src{display:flex; gap:8px; flex-wrap:wrap}
+  .btn{
+    font-family:var(--sans); font-size:12.5px; color:var(--ink);
+    background:var(--panel-2); border:1px solid var(--line); border-radius:6px;
+    padding:8px 13px; cursor:pointer; transition:border-color .12s, background .12s;
+  }
+  .btn:hover{border-color:var(--accent)}
+  .btn:active{background:#262d37}
+  .btn.primary{border-color:#3c4a52}
+  .btn.small{padding:5px 9px; font-size:11.5px}
+  .btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .status{
+    margin-left:auto; display:flex; gap:22px; flex-wrap:wrap; align-items:center;
+    font-family:var(--mono); font-size:11.5px; color:var(--ink-dim);
+  }
+  .status b{color:var(--ink); font-weight:600}
+  .status .dot{color:var(--ink-faint)}
+  .status .busy{color:var(--accent); position:absolute; right:20px; bottom:3px; font-size:10px}
+  header{position:relative}
+
+  main{display:grid; grid-template-columns:var(--rail,300px) 1fr; min-height:calc(100vh - 59px)}
+  body.vid-big{--rail:460px}
+  .stfile b{display:inline-block; max-width:34ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom}
+  .vidbox{position:relative; background:#000; border-radius:6px; overflow:hidden; display:flex; justify-content:center}
+  .vidbox video{display:block; width:100%; max-height:260px; background:#000}
+  body.vid-big .vidbox video{max-height:420px}
+  .vidmsg{font-size:11.5px; color:var(--warn); margin-top:7px; line-height:1.4}
+  .vidctl{display:flex; align-items:center; gap:6px; margin-top:8px}
+  .vidctl .btn.ic{padding:4px 8px; min-width:30px; display:inline-flex; align-items:center; justify-content:center}
+  .vidctl .btn.ic svg{width:13px; height:13px; fill:currentColor}
+  .vidctl select{width:auto; padding:4px 6px; font-size:11.5px}
+  .vidctl input[type=range]{flex:1; margin:0}
+  .vtime{font-family:var(--mono); font-size:11.5px; color:var(--ink); flex:1; text-align:center; white-space:nowrap}
+  .vtime.out{color:var(--ink-faint)}
+  .vrow{display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:8px}
+  .voff{display:flex; align-items:center; gap:8px; margin-top:9px; font-size:11.5px; color:var(--ink-dim)}
+  .voff input[type=number]{width:86px; padding:4px 6px}
+  .playhead{position:absolute; width:13px; margin-left:-6px; cursor:ew-resize; z-index:6; touch-action:none}
+  .playhead::before{content:''; position:absolute; left:6px; top:0; bottom:0; width:1.5px; background:#F2F5F8; opacity:.9; box-shadow:0 0 4px rgba(0,0,0,.8)}
+  .playhead span{position:absolute; top:0; left:10px; font-family:var(--mono); font-size:10px; color:#F2F5F8; background:rgba(18,22,28,.85); padding:1px 4px; border-radius:3px; white-space:nowrap; pointer-events:none}
+  aside{
+    border-right:1px solid var(--line); background:var(--panel);
+    padding:6px 0 40px; overflow-y:auto; max-height:calc(100vh - 59px);
+  }
+  .group{border-bottom:1px solid var(--line-soft); padding:16px 20px}
+  .group h2, details.adv > summary{
+    margin:0 0 13px; font-size:10.5px; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--ink-faint); font-weight:700;
+  }
+  details.adv > summary{cursor:pointer; margin:0; list-style:none}
+  details.adv > summary::-webkit-details-marker{display:none}
+  details.adv > summary::before{content:'▸ '; color:var(--accent)}
+  details.adv[open] > summary::before{content:'▾ '}
+  details.adv[open] > summary{margin-bottom:14px}
+  .sub-h{font-size:11px; color:var(--ink-dim); margin:16px 0 9px; padding-top:12px; border-top:1px solid var(--line-soft)}
+  .field{margin-bottom:13px}
+  .field:last-child{margin-bottom:0}
+  .field label{display:block; font-size:12px; color:var(--ink-dim); margin-bottom:5px}
+  .field .val{float:right; font-family:var(--mono); color:var(--ink); font-size:12px}
+  select,input[type=number]{
+    width:100%; background:var(--bg); color:var(--ink); border:1px solid var(--line);
+    border-radius:5px; padding:7px 9px; font-family:var(--mono); font-size:12.5px;
+  }
+  select:focus,input:focus{outline:none; border-color:var(--accent)}
+  select:disabled,input:disabled,button:disabled{opacity:.4; cursor:not-allowed}
+  input[type=range]{width:100%; accent-color:var(--accent); margin:3px 0 0}
+  .trimslider{position:relative; height:30px; margin-top:4px}
+  .trimslider .track{position:absolute; top:13px; left:0; right:0; height:4px; background:var(--line); border-radius:2px}
+  .trimslider .range{position:absolute; top:13px; height:4px; background:var(--accent); border-radius:2px; opacity:.85; left:0; right:0}
+  .trimslider input[type=range]{
+    position:absolute; top:0; left:0; width:100%; margin:0; height:30px;
+    -webkit-appearance:none; appearance:none; background:transparent; pointer-events:none;
+  }
+  .trimslider input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; pointer-events:auto;
+    width:15px; height:15px; border-radius:50%; background:var(--accent-press);
+    border:2px solid #11151a; cursor:pointer; margin-top:0;
+  }
+  .trimslider input[type=range]::-moz-range-thumb{
+    pointer-events:auto; width:14px; height:14px; border-radius:50%;
+    background:var(--accent-press); border:2px solid #11151a; cursor:pointer;
+  }
+  .trimslider input[type=range]::-webkit-slider-runnable-track{background:transparent; height:30px}
+  .trimslider input[type=range]::-moz-range-track{background:transparent}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:9px}
+  .seg{display:flex; border:1px solid var(--line); border-radius:6px; overflow:hidden}
+  .seg button{
+    flex:1; background:var(--bg); color:var(--ink-dim); border:0; padding:7px 4px;
+    font-family:var(--sans); font-size:11.5px; cursor:pointer; transition:.12s;
+  }
+  .seg button + button{border-left:1px solid var(--line)}
+  .seg button[aria-pressed=true]{background:var(--panel-2); color:var(--ink)}
+  .hint{font-size:11px; color:var(--ink-faint); line-height:1.4; margin-top:7px}
+  .ind{font-size:11.5px; font-family:var(--mono); margin-top:8px; line-height:1.45; color:var(--ink-dim)}
+  .ind.ok{color:var(--ok)}
+  .ind.warn{color:var(--warn)}
+  .fcrow{display:flex; align-items:center; gap:8px; margin-top:8px}
+  .toggle{display:flex; align-items:center; gap:9px; cursor:pointer; font-size:12px; color:var(--ink-dim)}
+  .toggle input{accent-color:var(--accent); width:15px; height:15px}
+
+  section.plots{display:flex; flex-direction:column; gap:1px; background:var(--line); min-width:0}
+  .panelwrap{background:var(--bg); padding:8px 14px 4px; min-width:0}
+  #stack{width:100%; height:560px}
+  #spectrum{width:100%; height:230px}
+  .specbar{display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:10px 18px 0; color:var(--ink-dim); font-size:11.5px; background:var(--bg)}
+  .specbar .k{font-family:var(--mono); color:var(--ink)}
+  .empty{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height:420px; color:var(--ink-faint); gap:14px; text-align:center; padding:24px; background:var(--bg);
+  }
+  .empty .big{font-family:var(--mono); letter-spacing:.06em; font-size:13px; color:var(--ink-dim)}
+  .empty.err .big{color:var(--warn)}
+  .legend{display:flex; gap:18px; padding:6px 18px 10px; font-size:11.5px; color:var(--ink-dim); flex-wrap:wrap; background:var(--bg)}
+  .legend span{display:inline-flex; align-items:center; gap:7px}
+  .swatch{width:11px; height:3px; border-radius:2px; display:inline-block}
+  .legend .navhint{margin-left:auto; color:var(--ink-faint); font-size:11px}
+  .pw{position:relative}
+  .grip{position:absolute; cursor:ew-resize; touch-action:none; z-index:5; border-radius:4px; user-select:none}
+  .grip:hover, .grip.active{background:rgba(127,181,196,.09)}
+  .grip span{position:absolute; right:6px; bottom:2px; font-size:10px; font-family:var(--mono); color:var(--accent); opacity:0; transition:opacity .15s; pointer-events:none}
+  .grip:hover span, .grip.active span{opacity:.9}
+  .warnbar{background:#23191480; border-left:3px solid var(--warn); color:var(--warn); padding:9px 16px; font-size:12.5px; line-height:1.5}
+  .warnbar div + div{margin-top:4px}
+  .readout{display:flex; gap:20px; flex-wrap:wrap; padding:9px 18px; background:var(--bg); font-family:var(--mono); font-size:12px; color:var(--ink-dim)}
+  .readout b{color:var(--ch-disp); font-weight:600}
+  .readout .k{color:var(--ink)}
+
+  footer{
+    border-top:1px solid var(--line); padding:13px 20px; color:var(--ink-faint);
+    font-size:11.5px; line-height:1.5;
+  }
+  footer b{color:var(--warn); font-weight:600}
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+    padding:10px 16px; border-radius:7px; font-size:12.5px; font-family:var(--mono);
+    box-shadow:0 8px 30px rgba(0,0,0,.4); opacity:0; pointer-events:none; transition:opacity .2s;
+    max-width:min(560px,90vw); z-index:10;
+  }
+  .toast.show{opacity:1}
+  .toast.err{border-color:var(--warn); color:var(--warn)}
+  @media (max-width:820px){
+    main{grid-template-columns:1fr}
+    aside{max-height:none; order:2; border-right:0; border-top:1px solid var(--line)}
+    section.plots{order:1}
+    #stack{height:480px}
+    .status{margin-left:0}
+  }
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important} }
+  input[type=file]{display:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="mark">TRACE</span>
+    <span class="ver">v1.3.0</span>
+    <span class="sub">acceleration → deflection</span>
+  </div>
+  <div class="src">
+    <button class="btn primary" id="btnMp4" title="Loads the accelerometer data and the video">Load GoPro MP4</button>
+    <button class="btn" id="btnCsv">Import CSV</button>
+    <button class="btn" id="btnTest">Test signal</button>
+    <input type="file" id="fileMp4" accept="video/mp4,.mp4,.lrv,.360" />
+    <input type="file" id="fileCsv" accept=".csv,.txt,.tsv,text/csv,text/plain" />
+  </div>
+  <div class="status" id="status">
+    <span class="busy" id="busy" hidden>computing…</span>
+    <span class="stfile"><span class="dot">file</span> <b id="stSrc" title="">—</b></span>
+    <span><span class="dot">rate</span> <b id="stRate">—</b></span>
+    <span><span class="dot">samples</span> <b id="stN">—</b></span>
+    <span><span class="dot">duration</span> <b id="stDur">—</b></span>
+  </div>
+</header>
+
+<main>
+  <aside>
+    <details class="group adv vidgrp" id="vidGroup" open hidden>
+      <summary>Video</summary>
+      <div class="vidbox"><video id="vid" playsinline preload="auto"></video></div>
+      <div class="vidmsg" id="vidMsg" hidden></div>
+      <div class="vidctl">
+        <button class="btn small ic" id="vBack" title="Previous frame (←)"><svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg></button>
+        <button class="btn small ic" id="vPlay" title="Play / pause (space)"><svg viewBox="0 0 16 16" id="vPlayIc"><path d="M4 2l10 6-10 6z"/></svg></button>
+        <button class="btn small ic" id="vFwd" title="Next frame (→)"><svg viewBox="0 0 16 16"><path d="M11 2h2v12h-2zM2 2v12l8-6z"/></svg></button>
+        <span class="vtime" id="vTime">—</span>
+        <select id="vRate" title="Playback speed" aria-label="Playback speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option></select>
+      </div>
+      <div class="vidctl">
+        <button class="btn small ic" id="vMute" title="Mute / unmute"><svg viewBox="0 0 16 16" id="vMuteIc"><path d="M2 6h3l4-3v10l-4-3H2z"/><path d="M11 5.5a3.5 3.5 0 010 5M12.5 3.5a6 6 0 010 9" stroke="currentColor" stroke-width="1.3" fill="none"/></svg></button>
+        <input type="range" id="vVol" min="0" max="1" step="0.05" value="0.8" aria-label="Volume" title="Volume">
+        <button class="btn small" id="vBig" title="Enlarge / shrink the video">Enlarge</button>
+      </div>
+      <div class="vrow">
+        <button class="btn small" id="vStart" title="Set the event window start to the current video time">Start here</button>
+        <button class="btn small" id="vEnd" title="Set the event window end to the current video time">End here</button>
+      </div>
+      <label class="toggle" style="margin-top:9px"><input type="checkbox" id="vFollow" checked> Follow playhead when zoomed</label>
+      <div class="voff" title="Shifts the video against the data. Use it if a visible knock and its spike in the graph don't line up.">Sync offset <input type="number" id="vOffset" value="0" step="0.01" min="-5" max="5"> s</div>
+      <div class="hint">Click a graph to jump there · drag the white playhead to scrub · Space: play/pause · ← →: one frame</div>
+    </details>
+
+    <div class="group">
+      <h2>Axis</h2>
+      <div class="field">
+        <select id="axis" disabled><option>—</option></select>
+        <div class="hint" id="axisHint">Pick the axis that points the way the structure moves — usually vertical.</div>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Event window</h2>
+      <div class="trimslider">
+        <div class="track"></div>
+        <div class="range" id="trimRange"></div>
+        <input type="range" id="trimLo" min="0" max="1000" value="0" step="1" aria-label="Window start">
+        <input type="range" id="trimHi" min="0" max="1000" value="1000" step="1" aria-label="Window end">
+      </div>
+      <div class="row2" style="margin-top:12px">
+        <div class="field" style="margin-bottom:0"><label for="trimStart">Start · s</label><input type="number" id="trimStart" value="0" step="any"></div>
+        <div class="field" style="margin-bottom:0"><label for="trimEnd">End · s</label><input type="number" id="trimEnd" value="0" step="any"></div>
+      </div>
+      <div class="hint" id="trimInfo">Include a quiet moment before and after the event.</div>
+      <div class="row2" style="margin-top:10px">
+        <button class="btn" id="btnTrimZoom">Use plot zoom</button>
+        <button class="btn" id="btnTrimReset">Full range</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>High-pass cutoff</h2>
+      <div class="field">
+        <label for="fcRange">Cutoff <span class="val" id="fcVal">0.30 Hz</span></label>
+        <input type="range" id="fcRange" min="0" max="1000" step="1" value="500">
+        <div class="fcrow"><button class="btn small" id="btnFcPeak" disabled>Set from peak</button><span class="hint" style="margin:0">cutoff = peak ÷ 3</span></div>
+        <div class="ind" id="fcInd">Keep the cutoff between peak ÷ 6 and peak ÷ 2.</div>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Integration</h2>
+      <div class="field">
+        <div class="seg" id="method">
+          <button data-v="time" aria-pressed="true">Time domain</button>
+          <button data-v="freq" aria-pressed="false">Frequency</button>
+        </div>
+        <div class="hint" id="methodHint">Time: zero-phase high-pass, then trapezoid integration. If Frequency gives about the same size, trust the result.</div>
+      </div>
+      <button class="btn" id="btnCsvOut" style="width:100%; margin-top:4px" disabled>Download processed CSV</button>
+    </div>
+
+    <details class="group adv" id="adv">
+      <summary>Advanced</summary>
+      <div class="row2">
+        <div class="field"><label for="calScale">Scale ×</label><input type="number" id="calScale" value="1" step="any"></div>
+        <div class="field"><label for="calBias">Bias −</label><input type="number" id="calBias" value="0" step="any"></div>
+      </div>
+      <div class="hint" style="margin-top:0">Scale converts to m/s²; bias removes a constant offset (m/s²). GoPro data is already m/s².</div>
+      <div class="field" style="margin-top:13px">
+        <label for="ordRange">Filter order <span class="val" id="ordVal">4</span></label>
+        <input type="range" id="ordRange" min="2" max="8" step="2" value="4">
+      </div>
+      <label class="toggle"><input type="checkbox" id="reHp"> Re-high-pass between integrations</label>
+      <div class="hint">Time method only. Extra drift rejection for noisy field data; slightly lower amplitude.</div>
+      <label class="toggle" style="margin-top:13px"><input type="checkbox" id="yLock"> Lock vertical scales</label>
+      <div class="hint">Keeps the current vertical scales while you pan, stretch or change settings — for comparing parts of a recording.</div>
+
+      <div class="sub-h">Spectrum</div>
+      <div class="field">
+        <label for="specSrc">Source</label>
+        <select id="specSrc">
+          <option value="a">Acceleration</option>
+          <option value="v">Velocity</option>
+          <option value="d">Displacement</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Method</label>
+        <div class="seg" id="specMethod">
+          <button data-v="welch" aria-pressed="true">Welch PSD</button>
+          <button data-v="fft" aria-pressed="false">FFT mag</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="segLen">Segment length <span class="val" id="segVal">1024</span></label>
+        <input type="range" id="segLen" min="8" max="14" step="1" value="10">
+        <div class="hint">Welch only. Longer = finer frequency steps, noisier curve.</div>
+      </div>
+      <label class="toggle"><input type="checkbox" id="specLog" checked> Log amplitude axis</label>
+    </details>
+  </aside>
+
+  <section class="plots">
+    <div class="empty" id="emptyStack">
+      <div class="big" id="emptyTitle">no signal loaded</div>
+      <div id="emptyMsg">Load a GoPro clip, import a CSV (columns: time, then 1–3 acceleration axes), or generate a test signal.</div>
+    </div>
+    <div id="plotArea" hidden>
+      <div class="warnbar" id="warnBar" hidden></div>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--ch-accel)"></i> acceleration · m/s²</span>
+        <span><i class="swatch" style="background:var(--ch-vel)"></i> velocity · m/s</span>
+        <span><i class="swatch" style="background:var(--ch-disp)"></i> displacement · mm</span>
+        <span class="navhint">drag graph: pan · drag time axis ⟷: stretch · Ctrl+wheel / pinch: stretch · double-click: reset</span>
+      </div>
+      <div class="readout" id="readout"></div>
+      <div class="panelwrap pw"><div id="stack"></div><div class="playhead" id="playhead" hidden><span id="phLabel"></span></div><div class="grip" id="gripStack" hidden title="Drag right to stretch time, left to compress. Double-click to reset."><span>⟷ drag to stretch</span></div></div>
+      <div class="specbar">
+        <span id="specLabel">acceleration spectrum</span>
+        <span class="k" id="peakInfo"></span>
+      </div>
+      <div class="panelwrap pw"><div id="spectrum"></div><div class="grip" id="gripSpec" hidden title="Drag right to stretch frequency, left to compress. Double-click to reset."><span>⟷ drag to stretch</span></div></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <b>Dynamic component only.</b> Double-integrated acceleration recovers oscillation about equilibrium, not static or quasi-static deflection. A parked/crawling load that settles the deck produces no acceleration to integrate — for absolute peak deflection under static load, use a direct sensor (LVDT, string pot) or camera-based target tracking. This tool is valid for vibration, modal and dynamic-amplification work.
+</footer>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const LIVE_LIMIT=100000;
+const FC_MIN=0.02;
+const S={
+  rawT:null, rawA:null, names:[], src:'', rate:0, fs:0,
+  t0:0, t1:0, trim:[0,0], loadWarn:[], loadId:0,
+  fc:0.30, fcMax:10,
+  t:null, a:null, v:null, d:null,
+  fPeak:0, peakKey:'', axisCache:null, lastKey:'',
+  view:null, fview:null, yr:null, spec:null, fileName:''
+};
+
+/* ---------- DSP ---------- */
+function resampleUniform(t, y, fs){
+  const t0=t[0], t1=t[t.length-1], dt=1/fs;
+  const N=Math.max(2, Math.floor((t1-t0)/dt+1e-9)+1);
+  const tu=new Float64Array(N), yu=new Float64Array(N);
+  let j=0;
+  for(let i=0;i<N;i++){
+    const tt=t0+i*dt; tu[i]=tt;
+    while(j<t.length-2 && t[j+1]<tt) j++;
+    const ta=t[j], tb=t[j+1], ya=y[j], yb=y[j+1];
+    const f=(tb===ta)?0:(tt-ta)/(tb-ta);
+    yu[i]=ya+(yb-ya)*Math.max(0,Math.min(1,f));
+  }
+  return {t:tu, y:yu};
+}
+function mean(y){ let s=0; for(let i=0;i<y.length;i++) s+=y[i]; return s/y.length; }
+function detrend(y, mode){
+  const out=Float64Array.from(y);
+  if(mode==='mean'){ const m=mean(out); for(let i=0;i<out.length;i++) out[i]-=m; return out; }
+  const n=out.length; let sx=0,sy=0,sxx=0,sxy=0;
+  for(let i=0;i<n;i++){ sx+=i; sy+=out[i]; sxx+=i*i; sxy+=i*out[i]; }
+  const den=n*sxx-sx*sx; const b=den?(n*sxy-sx*sy)/den:0; const a=(sy-b*sx)/n;
+  for(let i=0;i<n;i++) out[i]-=a+b*i;
+  return out;
+}
+function butterHighpassStages(fc, fs, order){
+  const stages=[], w0=2*Math.PI*fc/fs, cw=Math.cos(w0), sw=Math.sin(w0);
+  for(let k=0;k<order/2;k++){
+    const Q=1/(2*Math.cos(Math.PI*(2*k+1)/(2*order))), alpha=sw/(2*Q);
+    const b0=(1+cw)/2, b1=-(1+cw), b2=(1+cw)/2, a0=1+alpha, a1=-2*cw, a2=1-alpha;
+    stages.push({b0:b0/a0,b1:b1/a0,b2:b2/a0,a1:a1/a0,a2:a2/a0});
+  }
+  return stages;
+}
+function applyBiquad(y, s){
+  const out=new Float64Array(y.length);
+  let x1=0,x2=0,y1=0,y2=0;
+  for(let i=0;i<y.length;i++){
+    const x0=y[i];
+    let o=s.b0*x0+s.b1*x1+s.b2*x2-s.a1*y1-s.a2*y2;
+    if(o<1e-200 && o>-1e-200) o=0;
+    x2=x1; x1=x0; y2=y1; y1=o; out[i]=o;
+  }
+  return out;
+}
+function filtfiltHighpass(y, fc, fs, order){
+  if(fc<=0) return Float64Array.from(y);
+  const stages=butterHighpassStages(fc, fs, order);
+  const n=y.length, pad=Math.min(n-1, Math.round(3*fs/fc));
+  const ext=new Float64Array(n+2*pad);
+  for(let i=0;i<pad;i++){ ext[i]=2*y[0]-y[pad-i]; ext[ext.length-1-i]=2*y[n-1]-y[n-1-(pad-i)]; }
+  ext.set(y, pad);
+  let z=ext;
+  for(const s of stages) z=applyBiquad(z, s);
+  z.reverse();
+  for(const s of stages) z=applyBiquad(z, s);
+  z.reverse();
+  return z.slice(pad, pad+n);
+}
+function cumtrapz(y, dt){
+  const out=new Float64Array(y.length);
+  for(let i=1;i<y.length;i++) out[i]=out[i-1]+(y[i]+y[i-1])*0.5*dt;
+  return out;
+}
+function fft(re, im, inverse){
+  const n=re.length;
+  for(let i=1,j=0;i<n;i++){
+    let bit=n>>1;
+    for(;j&bit;bit>>=1) j^=bit;
+    j^=bit;
+    if(i<j){ let t=re[i]; re[i]=re[j]; re[j]=t; t=im[i]; im[i]=im[j]; im[j]=t; }
+  }
+  for(let len=2;len<=n;len<<=1){
+    const ang=(inverse?2:-2)*Math.PI/len, wr=Math.cos(ang), wi=Math.sin(ang), h=len>>1;
+    for(let i=0;i<n;i+=len){
+      let cr=1, ci=0;
+      for(let k=0;k<h;k++){
+        const p=i+k, q=p+h;
+        const vr=re[q]*cr-im[q]*ci, vi=re[q]*ci+im[q]*cr;
+        re[q]=re[p]-vr; im[q]=im[p]-vi; re[p]+=vr; im[p]+=vi;
+        const ncr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=ncr;
+      }
+    }
+  }
+  if(inverse){ for(let i=0;i<n;i++){ re[i]/=n; im[i]/=n; } }
+}
+function nextPow2(n){ let p=1; while(p<n) p<<=1; return p; }
+
+const chirpCache=new Map();
+function chirp(N, sgn){
+  const key=N+'|'+sgn;
+  if(chirpCache.has(key)) return chirpCache.get(key);
+  const M=nextPow2(2*N-1);
+  let c;
+  const other=chirpCache.get(N+'|'+(-sgn));
+  if(other){
+    // conjugate chirp: its transform is the conjugated, index-reversed transform
+    const sw=other.sw.map(x=>-x), br=new Float64Array(M), bi=new Float64Array(M);
+    for(let k=0;k<M;k++){ const j=(M-k)%M; br[k]=other.br[j]; bi[k]=-other.bi[j]; }
+    c={M, cw:other.cw, sw, br, bi};
+  } else {
+    const cw=new Float64Array(N), sw=new Float64Array(N);
+    for(let n=0;n<N;n++){ const ang=sgn*Math.PI*((n*n)%(2*N))/N; cw[n]=Math.cos(ang); sw[n]=Math.sin(ang); }
+    const br=new Float64Array(M), bi=new Float64Array(M);
+    br[0]=cw[0]; bi[0]=-sw[0];
+    for(let n=1;n<N;n++){ br[n]=cw[n]; bi[n]=-sw[n]; br[M-n]=cw[n]; bi[M-n]=-sw[n]; }
+    fft(br,bi,false);
+    c={M,cw,sw,br,bi};
+  }
+  if(chirpCache.size>=4) chirpCache.delete(chirpCache.keys().next().value);
+  chirpCache.set(key,c);
+  return c;
+}
+// Bluestein: DFT at native length N (no zero-pad leakage)
+function dftArb(reIn, imIn, inverse){
+  const N=reIn.length, {M,cw,sw,br,bi}=chirp(N, inverse?1:-1);
+  const ar=new Float64Array(M), ai=new Float64Array(M);
+  for(let n=0;n<N;n++){ ar[n]=reIn[n]*cw[n]-imIn[n]*sw[n]; ai[n]=reIn[n]*sw[n]+imIn[n]*cw[n]; }
+  fft(ar,ai,false);
+  for(let i=0;i<M;i++){ const r=ar[i]*br[i]-ai[i]*bi[i], m=ar[i]*bi[i]+ai[i]*br[i]; ar[i]=r; ai[i]=m; }
+  fft(ar,ai,true);
+  const Re=new Float64Array(N), Im=new Float64Array(N);
+  for(let k=0;k<N;k++){ Re[k]=ar[k]*cw[k]-ai[k]*sw[k]; Im[k]=ar[k]*sw[k]+ai[k]*cw[k]; }
+  if(inverse){ for(let k=0;k<N;k++){ Re[k]/=N; Im[k]/=N; } }
+  return {re:Re, im:Im};
+}
+// v and d are both real, so one inverse of (V + i·D) returns v in re and d in im
+function spectralIntegrate(y, fs, fcut){
+  const N=y.length, F=dftArb(y, new Float64Array(N), false);
+  const xr=new Float64Array(N), xi=new Float64Array(N);
+  for(let k=0;k<N;k++){
+    const f=(k<=N/2)? k*fs/N : (k-N)*fs/N;
+    if(f===0 || Math.abs(f)<fcut) continue;
+    const w=2*Math.PI*f, m=-1/(w*w);
+    const vr=2*k===N?0:F.im[k]/w, vi=2*k===N?0:-F.re[k]/w;
+    xr[k]=vr-F.im[k]*m;
+    xi[k]=vi+F.re[k]*m;
+  }
+  const X=dftArb(xr, xi, true);
+  return {v:X.re, d:X.im};
+}
+function magSpectrum(y, fs){
+  const N=y.length, M=nextPow2(N);
+  const re=new Float64Array(M), im=new Float64Array(M);
+  re.set(y);
+  fft(re, im, false);
+  const half=M/2, f=new Float64Array(half), mag=new Float64Array(half);
+  for(let k=0;k<half;k++){ f[k]=k*fs/M; mag[k]=2*Math.hypot(re[k],im[k])/N; }
+  return {f, mag, psd:false, res:fs/M};
+}
+function welchPSD(y, fs, segReq){
+  const N=y.length;
+  let L=8; while(L*2<=Math.min(segReq, N)) L*=2;
+  const empty={f:new Float64Array(0), mag:new Float64Array(0), psd:true, res:fs/L, segs:0};
+  if(N<L) return empty;
+  const hop=L>>1, win=new Float64Array(L); let U=0;
+  for(let i=0;i<L;i++){ win[i]=0.5-0.5*Math.cos(2*Math.PI*i/(L-1)); U+=win[i]*win[i]; }
+  const half=L>>1, acc=new Float64Array(half+1), re=new Float64Array(L), im=new Float64Array(L);
+  let segs=0;
+  for(let s=0; s+L<=N; s+=hop){
+    let m=0; for(let i=0;i<L;i++) m+=y[s+i]; m/=L;
+    for(let i=0;i<L;i++){ re[i]=(y[s+i]-m)*win[i]; im[i]=0; }
+    fft(re, im, false);
+    for(let k=0;k<=half;k++){
+      let p=re[k]*re[k]+im[k]*im[k];
+      if(k!==0 && k!==half) p*=2;
+      acc[k]+=p;
+    }
+    segs++;
+  }
+  const f=new Float64Array(half+1), mag=new Float64Array(half+1), scale=1/(fs*U*segs);
+  for(let k=0;k<=half;k++){ f[k]=k*fs/L; mag[k]=acc[k]*scale; }
+  return {f, mag, psd:true, res:fs/L, segs};
+}
+function findPeak(sp, fmin, fmax){
+  let k0=-1;
+  for(let k=1;k<sp.f.length-1;k++){
+    if(sp.f[k]<fmin || sp.f[k]>fmax) continue;
+    if(k0<0 || sp.mag[k]>sp.mag[k0]) k0=k;
+  }
+  if(k0<1) return 0;
+  let a=sp.mag[k0-1], b=sp.mag[k0], c=sp.mag[k0+1];
+  if(a<=0||b<=0||c<=0) return sp.f[k0];
+  a=Math.log(a); b=Math.log(b); c=Math.log(c);
+  const den=a-2*b+c;
+  const dk=den<0 ? Math.max(-0.5, Math.min(0.5, 0.5*(a-c)/den)) : 0;
+  return sp.f[k0]+dk*sp.res;
+}
+function dominantFreq(y, fs){
+  const a=filtfiltHighpass(y, 0.1, fs, 4);
+  let L=8192; while(L>64 && L*2>a.length) L>>=1;
+  return findPeak(welchPSD(a, fs, L), 0.25, fs*0.45);
+}
+// min/max decimation for display only
+function thin(x, y, maxBuckets){
+  const n=y.length;
+  if(n<=2*maxBuckets) return {x:Array.from(x), y:Array.from(y)};
+  const step=n/maxBuckets, ox=[], oy=[];
+  for(let b=0;b<maxBuckets;b++){
+    const s=Math.floor(b*step), e=Math.min(n, Math.floor((b+1)*step));
+    let lo=s, hi=s;
+    for(let i=s+1;i<e;i++){ if(y[i]<y[lo]) lo=i; if(y[i]>y[hi]) hi=i; }
+    const p=lo<hi?[lo,hi]:[hi,lo];
+    ox.push(x[p[0]], x[p[1]]); oy.push(y[p[0]], y[p[1]]);
+  }
+  return {x:ox, y:oy};
+}
+
+/* ---------- window checks ---------- */
+function windowWarnings(a, fs, fc){
+  const out=[], n=a.length, L=n/fs;
+  if(L < 3/fc){
+    out.push('Window is '+L.toFixed(1)+' s — shorter than 3 ÷ cutoff ('+(3/fc).toFixed(1)+' s). Displacement may be inflated: widen the window or raise the cutoff.');
+  }
+  const E=Math.max(8, Math.min(Math.floor(0.2*n), Math.round(fs*Math.max(1, 1/fc))));
+  if(n>=3*E){
+    const cs=new Float64Array(n+1);
+    for(let i=0;i<n;i++) cs[i+1]=cs[i]+a[i]*a[i];
+    const rms=(s,e)=>Math.sqrt((cs[e]-cs[s])/(e-s));
+    let mx=0; const hop=Math.max(1, E>>1);
+    for(let s=0;s+E<=n;s+=hop) mx=Math.max(mx, rms(s,s+E));
+    if(mx>0){
+      const head=rms(0,E)/mx>0.5, tail=rms(n-E,n)/mx>0.5;
+      if(head||tail){
+        const w=head&&tail?'starts and ends':head?'starts':'ends';
+        out.push('Window '+w+' while the structure is still moving — displacement is unreliable. Include a quiet moment before and after the event.');
+      }
+    }
+  }
+  return out;
+}
+
+/* ---------- pipeline ---------- */
+const getMethod=()=>document.querySelector('#method button[aria-pressed=true]').dataset.v;
+const getSpecMethod=()=>document.querySelector('#specMethod button[aria-pressed=true]').dataset.v;
+
+function axisSeries(){
+  const ax=$('axis').value;
+  if(S.axisCache && S.axisCache.key===S.loadId+'|'+ax) return S.axisCache.arr;
+  let arr;
+  if(ax==='mag'){
+    const [x,y,z]=S.rawA, n=x.length; arr=new Float64Array(n);
+    for(let i=0;i<n;i++) arr[i]=Math.hypot(x[i],y[i],z[i]);
+  } else arr=S.rawA[+ax];
+  S.axisCache={key:S.loadId+'|'+ax, arr};
+  return arr;
+}
+function lowerBound(arr, x){ let lo=0, hi=arr.length; while(lo<hi){ const m=(lo+hi)>>1; if(arr[m]<x) lo=m+1; else hi=m; } return lo; }
+function getCal(){
+  let sc=parseFloat($('calScale').value), bi=parseFloat($('calBias').value);
+  if(!isFinite(sc) || sc===0){ sc=1; $('calScale').value=1; toast('Scale must be a non-zero number — reset to 1.', true); }
+  if(!isFinite(bi)){ bi=0; $('calBias').value=0; }
+  return {sc, bi};
+}
+
+function process(){
+  if(!S.rawT) return;
+  const {sc, bi}=getCal();
+  const fs=S.fs, fc=S.fc, order=+$('ordRange').value, method=getMethod(), reHp=$('reHp').checked, ax=$('axis').value;
+  const key=[S.loadId, ax, sc, bi, S.trim[0], S.trim[1], fc, order, method, reHp].join('|');
+  if(key===S.lastKey && S.d) return;
+
+  const i0=lowerBound(S.rawT, S.trim[0]), i1=lowerBound(S.rawT, S.trim[1]+1e-9);
+  const n=i1-i0;
+  if(n<24 || (S.trim[1]-S.trim[0])*fs<32){
+    S.t=S.a=S.v=S.d=null; S.lastKey='';
+    showEmpty('Event window too short', 'Widen the window to at least a few seconds.', true);
+    return;
+  }
+  const src=axisSeries(), tt=S.rawT.subarray(i0,i1), yy=new Float64Array(n);
+  for(let k=0;k<n;k++) yy[k]=src[i0+k]*sc-bi;
+  const rs=resampleUniform(tt, yy, fs), dt=1/fs;
+  const a0=detrend(rs.y,'mean');
+
+  const pk=[S.loadId, ax, sc, bi, S.trim[0], S.trim[1]].join('|');
+  if(pk!==S.peakKey){ S.fPeak=dominantFreq(a0, fs); S.peakKey=pk; }
+
+  const a=filtfiltHighpass(a0, fc, fs, order);
+  let v, d;
+  if(method==='time'){
+    v=detrend(cumtrapz(a, dt),'linear');
+    if(reHp) v=filtfiltHighpass(v, fc, fs, order);
+    d=detrend(cumtrapz(v, dt),'linear');
+    if(reHp) d=filtfiltHighpass(d, fc, fs, order);
+  } else {
+    ({v, d}=spectralIntegrate(a, fs, fc));
+  }
+  d=detrend(d,'linear');
+
+  S.t=rs.t; S.a=a; S.v=v; S.d=d; S.lastKey=key;
+  const warns=[...S.loadWarn];
+  if(ax==='mag') warns.push('Magnitude has no sign — displacement from it is not meaningful. Use a single axis.');
+  warns.push(...windowWarnings(a, fs, fc));
+  renderWarnings(warns);
+  showPlots();
+  draw();
+  drawSpectrum();
+  updateReadout();
+  updateFcInd();
+}
+
+let pending=false;
+function schedule(){
+  if(pending || !S.rawT) return;
+  pending=true; $('busy').hidden=false;
+  requestAnimationFrame(()=>setTimeout(()=>{
+    pending=false;
+    try{ process(); }catch(e){ showEmpty('Processing failed', e.message, true); }
+    $('busy').hidden=true;
+  },0));
+}
+
+/* ---------- display ---------- */
+const PLOT_BG='#12161C', GRID='#232932', AXIS='#8B95A2';
+const baseAxis={gridcolor:GRID, zerolinecolor:'#313a45', color:AXIS, linecolor:GRID,
+  tickfont:{family:'ui-monospace,monospace',size:10}, automargin:true};
+
+function showEmpty(title, msg, err){
+  $('emptyTitle').textContent=title;
+  $('emptyMsg').textContent=msg;
+  $('emptyStack').classList.toggle('err', !!err);
+  $('emptyStack').hidden=false;
+  $('plotArea').hidden=true;
+  if(window.Plotly){ Plotly.purge('stack'); Plotly.purge('spectrum'); }
+  $('stack').__rl=false; $('spectrum').__rl=false; $('stack').__ck=false;
+  $('playhead').hidden=true;
+  S.spec=null;
+}
+function showPlots(){ $('emptyStack').hidden=true; $('plotArea').hidden=false; }
+function renderWarnings(list){
+  const el=$('warnBar');
+  el.innerHTML='';
+  list.forEach(w=>{ const d=document.createElement('div'); d.textContent='⚠ '+w; el.appendChild(d); });
+  el.hidden=!list.length;
+}
+
+/* ---------- view: stretch, pan, fit ---------- */
+function thinInto(x, y, scale, i0, i1, B, ox, oy){
+  const n=i1-i0;
+  if(n<=0) return;
+  B=Math.max(1, Math.round(B));
+  if(n<=2*B){ for(let i=i0;i<i1;i++){ ox.push(x[i]); oy.push(y[i]*scale); } return; }
+  const step=n/B;
+  for(let b=0;b<B;b++){
+    const s=i0+Math.floor(b*step), e=Math.min(i1, i0+Math.floor((b+1)*step));
+    if(e<=s) continue;
+    let lo=s, hi=s;
+    for(let i=s+1;i<e;i++){ if(y[i]<y[lo]) lo=i; if(y[i]>y[hi]) hi=i; }
+    if(lo===hi){ ox.push(x[lo]); oy.push(y[lo]*scale); }
+    else { const p=lo<hi?lo:hi, q=lo<hi?hi:lo; ox.push(x[p],x[q]); oy.push(y[p]*scale,y[q]*scale); }
+  }
+}
+// coarse (cached) outside the view, full detail across the view ± half a view
+const coarseCache=new WeakMap(), fullCache=new WeakMap();
+function coarseOf(x, y, scale){
+  const hit=coarseCache.get(y);
+  if(hit && hit.scale===scale && hit.x===x) return hit;
+  const n=y.length, B=Math.min(600, n), step=n/B, px=[], py=[], ps=[], pe=[];
+  for(let b=0;b<B;b++){
+    const s=Math.floor(b*step), e=Math.min(n, Math.floor((b+1)*step));
+    if(e<=s) continue;
+    let lo=s, hi=s;
+    for(let i=s+1;i<e;i++){ if(y[i]<y[lo]) lo=i; if(y[i]>y[hi]) hi=i; }
+    const idx=lo===hi?[lo]:(lo<hi?[lo,hi]:[hi,lo]);
+    for(const i of idx){ px.push(x[i]); py.push(y[i]*scale); ps.push(s); pe.push(e); }
+  }
+  const c={px,py,ps,pe,scale,x};
+  coarseCache.set(y,c);
+  return c;
+}
+function viewSeries(x, y, scale, view){
+  const n=y.length, ox=[], oy=[];
+  if(!view){
+    const hit=fullCache.get(y);
+    if(hit && hit.scale===scale && hit.xa===x) return hit;
+    thinInto(x,y,scale,0,n,1500,ox,oy);
+    const r={x:ox, y:oy, scale, xa:x};
+    fullCache.set(y, r);
+    return r;
+  }
+  const span=view[1]-view[0];
+  const e0=lowerBound(x, view[0]-span*0.5), e1=Math.min(n, lowerBound(x, view[1]+span*0.5)+1);
+  const c=coarseOf(x, y, scale);
+  for(let k=0;k<c.px.length && c.pe[k]<=e0;k++){ ox.push(c.px[k]); oy.push(c.py[k]); }
+  thinInto(x,y,scale,e0,e1,1000,ox,oy);
+  for(let k=0;k<c.px.length;k++) if(c.ps[k]>=e1){ ox.push(c.px[k]); oy.push(c.py[k]); }
+  return {x:ox,y:oy};
+}
+function fitRange(x, y, scale, view, log){
+  let i0=0, i1=y.length;
+  if(view){ i0=Math.max(0, lowerBound(x, view[0])-1); i1=Math.min(y.length, lowerBound(x, view[1])+1); }
+  let lo=Infinity, hi=-Infinity;
+  for(let i=i0;i<i1;i++){
+    let v=y[i]*scale;
+    if(log){ if(!(v>0)) continue; v=Math.log10(v); }
+    if(v<lo) lo=v; if(v>hi) hi=v;
+  }
+  if(!isFinite(lo)) return null;
+  let pad=(hi-lo)*0.05;
+  if(!(pad>0)) pad=Math.abs(hi)*0.05||1e-9;
+  return [lo-pad, hi+pad];
+}
+function clampView(r, full, minSpan, nullIfFull){
+  if(!r || !(r[1]>r[0])) return null;
+  const F=full[1]-full[0];
+  let span=Math.max(minSpan, r[1]-r[0]);
+  if(span>=F*0.9999) return nullIfFull ? null : full.slice();
+  let a=r[0]+((r[1]-r[0])-span)/2;
+  if(a<full[0]) a=full[0];
+  if(a+span>full[1]) a=full[1]-span;
+  return [a, a+span];
+}
+function zoomAbout(r, a, k){ return [a-(a-r[0])*k, a+(r[1]-a)*k]; }
+
+const stackFull=()=>[S.t[0], S.t[S.t.length-1]];
+function setStackView(r){ S.view=clampView(r, stackFull(), 20/S.fs, true); requestRender('stack'); }
+const specDefault=()=>[0, Math.min(S.fs/2, Math.max(15, (S.fPeak||S.spec.pf)*4||15))];
+function setSpecView(r){ S.fview=r ? clampView(r, [0, S.fs/2], 5*S.spec.res, false) : null; requestRender('spec'); }
+
+const rafs={};
+function requestRender(which){
+  if(rafs[which]) return;
+  rafs[which]=requestAnimationFrame(()=>{ rafs[which]=0; which==='stack' ? renderStack() : renderSpectrum(); });
+}
+
+const CTL={
+  stack:{gd:'stack', grip:'gripStack', ready:()=>!!S.d, get:()=>S.view||stackFull(), set:r=>setStackView(r), reset:()=>setStackView(null)},
+  spec:{gd:'spectrum', grip:'gripSpec', ready:()=>!!S.spec, get:()=>S.fview||specDefault(), set:r=>setSpecView(r), reset:()=>setSpecView(null)}
+};
+function pxToData(ctl, clientX){
+  const gd=$(ctl.gd), s=gd._fullLayout._size, rect=gd.getBoundingClientRect(), r=ctl.get();
+  const f=Math.max(0, Math.min(1, (clientX-rect.left-s.l)/s.w));
+  return r[0]+f*(r[1]-r[0]);
+}
+function placeGrip(ctl){
+  const gd=$(ctl.gd), g=$(ctl.grip), fl=gd._fullLayout;
+  if(!fl || !fl._size){ g.hidden=true; return; }
+  const s=fl._size;
+  g.hidden=false;
+  g.style.left=(gd.offsetLeft+s.l)+'px';
+  g.style.top=(gd.offsetTop+s.t+s.h+1)+'px';
+  g.style.width=s.w+'px';
+  g.style.height=Math.max(22, s.b-2)+'px';
+}
+function attachView(ctl){
+  const gd=$(ctl.gd), g=$(ctl.grip);
+  let st=null;
+  g.addEventListener('pointerdown', e=>{
+    if(!ctl.ready() || e.button>0) return;
+    e.preventDefault();
+    g.setPointerCapture(e.pointerId);
+    st={x:e.clientX, r:ctl.get(), a:pxToData(ctl, e.clientX)};
+    g.classList.add('active');
+  });
+  g.addEventListener('pointermove', e=>{
+    if(!st) return;
+    ctl.set(zoomAbout(st.r, st.a, Math.exp(-(e.clientX-st.x)/150)));
+  });
+  const end=()=>{ st=null; g.classList.remove('active'); };
+  g.addEventListener('pointerup', end);
+  g.addEventListener('pointercancel', end);
+  g.addEventListener('dblclick', ()=>{ if(ctl.ready()) ctl.reset(); });
+  gd.addEventListener('wheel', e=>{
+    if(!(e.ctrlKey||e.metaKey) || !ctl.ready()) return;
+    e.preventDefault(); e.stopPropagation();
+    const d=e.deltaY, k=Math.abs(d)>=50 ? (d>0?1.25:0.8) : Math.exp(d*0.01);
+    ctl.set(zoomAbout(ctl.get(), pxToData(ctl, e.clientX), k));
+  }, {passive:false, capture:true});
+  let pin=null;
+  const pdist=t=>Math.max(30, Math.abs(t[0].clientX-t[1].clientX));
+  gd.addEventListener('touchstart', e=>{
+    if(e.touches.length!==2 || !ctl.ready()) return;
+    e.preventDefault(); e.stopPropagation();
+    pin={d:pdist(e.touches), r:ctl.get(), a:pxToData(ctl, (e.touches[0].clientX+e.touches[1].clientX)/2)};
+  }, {passive:false, capture:true});
+  gd.addEventListener('touchmove', e=>{
+    if(!pin || e.touches.length!==2) return;
+    e.preventDefault(); e.stopPropagation();
+    ctl.set(zoomAbout(pin.r, pin.a, pin.d/pdist(e.touches)));
+  }, {passive:false, capture:true});
+  gd.addEventListener('touchend', e=>{ if(e.touches.length<2) pin=null; }, {capture:true});
+  new ResizeObserver(()=>requestAnimationFrame(()=>placeGrip(ctl))).observe(gd);
+}
+function hookPlot(ctl, onRelayout){
+  const gd=$(ctl.gd);
+  if(gd.__rl) return;
+  gd.on('plotly_relayout', ev=>{
+    if(!ev || !Object.keys(ev).some(k=>k.startsWith('xaxis'))) return;
+    if(ev['xaxis.autorange']) ctl.reset();
+    else { const r=gd.layout.xaxis.range; ctl.set([+r[0], +r[1]]); }
+  });
+  gd.on('plotly_afterplot', ()=>{ placeGrip(ctl); if(ctl===CTL.stack) updatePlayhead(); });
+  gd.__rl=true;
+}
+const PLOT_CFG={responsive:true, displaylogo:false, doubleClick:'autosize', scrollZoom:false};
+
+function draw(){ renderStack(); }
+function renderStack(){
+  if(!S.d) return;
+  const T=S.t, v=S.view;
+  const pa=viewSeries(T,S.a,1,v), pv=viewSeries(T,S.v,1,v), pd=viewSeries(T,S.d,1000,v);
+  let yr=S.yr;
+  if(!($('yLock').checked && yr)){ yr=[fitRange(T,S.a,1,v), fitRange(T,S.v,1,v), fitRange(T,S.d,1000,v)]; S.yr=yr; }
+  const yax=(dom, title, color, r)=>({...baseAxis, domain:dom, fixedrange:true,
+    title:{text:title,font:{size:10.5,color}}, ...(r?{range:r.slice(), autorange:false}:{autorange:true})});
+  const traces=[
+    {x:pa.x,y:pa.y,xaxis:'x',yaxis:'y3',line:{color:'#E8A33D',width:1.2},hovertemplate:'%{y:.4f} m/s²<extra>accel</extra>'},
+    {x:pv.x,y:pv.y,xaxis:'x',yaxis:'y2',line:{color:'#54C3D8',width:1.2},hovertemplate:'%{y:.5f} m/s<extra>vel</extra>'},
+    {x:pd.x,y:pd.y,xaxis:'x',yaxis:'y',line:{color:'#C77DD6',width:1.4},hovertemplate:'%{y:.3f} mm<extra>disp</extra>'}
+  ];
+  const layout={
+    paper_bgcolor:PLOT_BG, plot_bgcolor:PLOT_BG, showlegend:false, dragmode:'pan',
+    margin:{l:62,r:14,t:8,b:34}, hovermode:'x unified', hoverlabel:{font:{family:'ui-monospace,monospace',size:11}},
+    xaxis:{...baseAxis, title:{text:'time · s',font:{size:11,color:AXIS}}, anchor:'y', ...(v?{range:v.slice(), autorange:false}:{autorange:true})},
+    yaxis3:yax([0.69,1.0],'accel m/s²','#E8A33D',yr[0]),
+    yaxis2:yax([0.355,0.645],'vel m/s','#54C3D8',yr[1]),
+    yaxis:yax([0.0,0.31],'disp mm','#C77DD6',yr[2])
+  };
+  Plotly.react('stack', traces, layout, {...PLOT_CFG,
+    modeBarButtonsToRemove:['lasso2d','select2d','autoScale2d'], toImageButtonOptions:{format:'png',scale:2,filename:'trace_'+baseName()}});
+  hookPlot(CTL.stack);
+  const gd=$('stack');
+  if(!gd.__ck){ gd.on('plotly_click', ev=>{ if(vidOn() && ev && ev.points && ev.points.length) seekData(+ev.points[0].x); }); gd.__ck=true; }
+  placeGrip(CTL.stack);
+  updateReadout();
+  updatePlayhead();
+}
+
+function updateReadout(){
+  if(!S.d) return;
+  const [r0,r1]=S.view||stackFull();
+  const i0=Math.max(0, lowerBound(S.t, r0)), i1=Math.min(S.t.length, lowerBound(S.t, r1+1e-9));
+  const el=$('readout');
+  if(i1-i0<2){ el.textContent='Visible range too small.'; return; }
+  let m=0; for(let i=i0;i<i1;i++) m+=S.d[i]; m/=(i1-i0);
+  let q=0, pk=0, pt=S.t[i0];
+  for(let i=i0;i<i1;i++){ const x=S.d[i]; q+=(x-m)*(x-m); if(Math.abs(x)>pk){ pk=Math.abs(x); pt=S.t[i]; } }
+  const amp=Math.sqrt(q/(i1-i0))*Math.SQRT2*1000;
+  el.innerHTML='';
+  const add=(label, val)=>{ const s=document.createElement('span'); s.append(label+' '); const b=document.createElement('b'); b.textContent=val; s.appendChild(b); el.appendChild(s); };
+  const r=document.createElement('span'); r.className='k'; r.textContent='visible '+S.t[i0].toFixed(1)+'–'+S.t[i1-1].toFixed(1)+' s'; el.appendChild(r);
+  add('amplitude √2·RMS', amp.toFixed(2)+' mm');
+  add('peak', (pk*1000).toFixed(2)+' mm @ '+pt.toFixed(2)+' s');
+  if(S.fPeak) add('dominant', S.fPeak.toFixed(2)+' Hz');
+}
+
+function drawSpectrum(){
+  if(!S.a) return;
+  const srcKey=$('specSrc').value, method=getSpecMethod(), logY=$('specLog').checked;
+  const fc=S.fc, fs=S.fs;
+  const sig=srcKey==='v'?S.v : srcKey==='d'?S.d : S.a;
+  const names={a:'acceleration', v:'velocity', d:'displacement'};
+  const units={a:'(m/s²)', v:'(m/s)', d:'(m)'};
+  let sp, ylab;
+  if(method==='welch'){ sp=welchPSD(sig, fs, Math.pow(2, +$('segLen').value)); ylab='PSD '+units[srcKey]+'²/Hz'; }
+  else { sp=magSpectrum(sig, fs); ylab='|'+srcKey+'| '+units[srcKey]; }
+  const pf=findPeak(sp, Math.max(0.1, fc), fs/2);
+  const resTxt=sp.psd ? ('  ·  Δf '+sp.res.toFixed(3)+' Hz · '+sp.segs+' avg') : ('  ·  Δf '+sp.res.toFixed(4)+' Hz');
+  $('peakInfo').textContent=(pf?('peak ≈ '+pf.toFixed(2)+' Hz'):'no peak above cutoff')+resTxt;
+  $('specLabel').textContent=names[srcKey]+' '+(method==='welch'?'PSD':'spectrum')+' — cutoff (dotted) must sit left of the first peak';
+  const fx=[], fy=[];
+  for(let k=1;k<sp.f.length;k++){ if(!logY || sp.mag[k]>0){ fx.push(sp.f[k]); fy.push(sp.mag[k]); } }
+  S.spec={f:Float64Array.from(fx), m:Float64Array.from(fy), log:logY, ylab, pf, res:sp.res};
+  if(S.fview) S.fview=clampView(S.fview, [0, fs/2], 5*sp.res, false);
+  renderSpectrum();
+}
+function renderSpectrum(){
+  const P=S.spec;
+  if(!P || !P.f.length) return;
+  const view=S.fview||specDefault(), fc=S.fc;
+  const p=viewSeries(P.f, P.m, 1, view);
+  const yr=fitRange(P.f, P.m, 1, view, P.log);
+  const layout={
+    paper_bgcolor:PLOT_BG, plot_bgcolor:PLOT_BG, showlegend:false, dragmode:'pan',
+    margin:{l:66,r:14,t:20,b:36},
+    xaxis:{...baseAxis, title:{text:'frequency · Hz',font:{size:11,color:AXIS}}, range:view.slice(), autorange:false},
+    yaxis:{...baseAxis, fixedrange:true, title:{text:P.ylab,font:{size:10.5,color:AXIS}}, type:P.log?'log':'linear',
+      ...(yr?{range:yr, autorange:false}:{autorange:true})},
+    shapes:[{type:'line', x0:fc, x1:fc, yref:'paper', y0:0, y1:1, line:{color:'#7FB5C4', width:1.4, dash:'dot'}}],
+    annotations:[{x:fc, yref:'paper', y:1, text:'cutoff', showarrow:false, font:{color:'#7FB5C4',size:10}, yanchor:'bottom', xanchor:'left'}]
+  };
+  Plotly.react('spectrum',
+    [{x:p.x, y:p.y, line:{color:'#9aa6b3',width:1}, hovertemplate:'%{x:.3f} Hz<extra></extra>'}],
+    layout, {...PLOT_CFG, displayModeBar:false});
+  hookPlot(CTL.spec);
+  placeGrip(CTL.spec);
+}
+
+/* ---------- cutoff control (log slider) ---------- */
+function fcFromPos(p){ return FC_MIN*Math.pow(S.fcMax/FC_MIN, p/1000); }
+function posFromFc(fc){ return Math.round(1000*Math.log(fc/FC_MIN)/Math.log(S.fcMax/FC_MIN)); }
+function roundFc(fc){ return fc<0.1 ? Math.round(fc*1000)/1000 : Math.round(fc*100)/100; }
+function setFc(fc, fromSlider){
+  S.fc=roundFc(Math.max(FC_MIN, Math.min(S.fcMax, fc)));
+  if(!fromSlider) $('fcRange').value=posFromFc(S.fc);
+  $('fcVal').textContent=(S.fc<0.1?S.fc.toFixed(3):S.fc.toFixed(2))+' Hz';
+  updateFcInd();
+}
+function updateFcInd(){
+  const el=$('fcInd'); $('btnFcPeak').disabled=!S.fPeak;
+  if(!S.rawT){ el.className='ind'; el.textContent='Keep the cutoff between peak ÷ 6 and peak ÷ 2.'; return; }
+  if(!S.fPeak){ el.className='ind warn'; el.textContent='No clear peak found — set the cutoff by eye from the spectrum.'; return; }
+  const r=S.fPeak/S.fc;
+  let cls='ok', txt;
+  if(r<1) { cls='warn'; txt='Cutoff is ABOVE the peak — the vibration is being removed.'; }
+  else if(r<2){ cls='warn'; txt='Too close to the peak — amplitude will be understated.'; }
+  else if(r>6){ cls='warn'; txt='Low — drift may appear. Consider raising it.'; }
+  else txt='OK.';
+  el.className='ind '+cls;
+  el.textContent='Peak '+S.fPeak.toFixed(2)+' Hz · cutoff = peak ÷ '+r.toFixed(1)+'. '+txt;
+}
+
+/* ---------- loading ---------- */
+function setStatus(src, rate, n, dur){
+  $('stSrc').textContent=src||'—';
+  $('stSrc').title=src||'';
+  $('stRate').textContent=rate?rate.toFixed(1)+' Hz':'—';
+  $('stN').textContent=n?n.toLocaleString():'—';
+  $('stDur').textContent=dur?dur.toFixed(1)+' s':'—';
+}
+function resetData(){
+  Object.assign(S,{rawT:null, rawA:null, names:[], src:'', t:null, a:null, v:null, d:null, fPeak:0, peakKey:'', axisCache:null, lastKey:'', loadWarn:[], view:null, fview:null, yr:null, spec:null});
+  S.loadId++;
+  const sel=$('axis'); sel.innerHTML='<option>—</option>'; sel.disabled=true;
+  $('btnCsvOut').disabled=true;
+  renderWarnings([]);
+  setStatus();
+  updateFcInd();
+  S.fileName='';
+  detachVideo();
+}
+function failLoad(msg){
+  resetData();
+  showEmpty('could not load file', msg, true);
+  toast(msg, true);
+}
+
+function prepare(t, cols){
+  const notes=[], warns=[];
+  let n=t.length;
+  let sorted=true;
+  for(let i=1;i<n;i++) if(t[i]<t[i-1]){ sorted=false; break; }
+  if(!sorted){
+    const idx=Array.from({length:n},(_,i)=>i).sort((p,q)=>t[p]-t[q]);
+    t=idx.map(i=>t[i]); cols=cols.map(c=>idx.map(i=>c[i]));
+    notes.push('rows sorted by time');
+  }
+  const T=[], C=cols.map(()=>[]);
+  let dup=0;
+  for(let i=0;i<n;){
+    let j=i+1; while(j<n && t[j]===t[i]) j++;
+    T.push(t[i]);
+    cols.forEach((c,k)=>{ let s=0; for(let q=i;q<j;q++) s+=c[q]; C[k].push(s/(j-i)); });
+    dup+=j-i-1; i=j;
+  }
+  if(dup) notes.push(dup+' duplicate timestamps averaged');
+  n=T.length;
+  if(n<24) throw new Error('Too few samples ('+n+'). At least 24 are needed.');
+  let tt=Float64Array.from(T);
+  const dts=new Float64Array(n-1);
+  for(let i=1;i<n;i++) dts[i-1]=tt[i]-tt[i-1];
+  const sortedDt=Float64Array.from(dts).sort();
+  let med=sortedDt[sortedDt.length>>1], rate=1/med;
+  if(rate<5){
+    for(const [f,label] of [[1e-3,'milliseconds'],[1e-6,'microseconds']]){
+      if(rate/f>=5 && rate/f<=1e5){
+        for(let i=0;i<n;i++) tt[i]*=f;
+        for(let i=0;i<dts.length;i++) dts[i]*=f;
+        med*=f; rate/=f;
+        notes.push('time column looked like '+label+' — converted to seconds');
+        break;
+      }
+    }
+  }
+  if(rate<5) throw new Error('Sample rate is only '+rate.toFixed(2)+' Hz. Check the first column is time in seconds.');
+  if(rate>1e5) throw new Error('Sample rate is '+Math.round(rate)+' Hz — too high. Check the first column is time in seconds.');
+  let gaps=0, maxGap=0;
+  for(let i=0;i<dts.length;i++) if(dts[i]>5*med){ gaps++; maxGap=Math.max(maxGap, dts[i]); }
+  if(gaps) warns.push(gaps+' gap'+(gaps>1?'s':'')+' in the time data (largest '+maxGap.toFixed(2)+' s), bridged with straight lines. Set the event window to avoid '+(gaps>1?'them':'it')+'.');
+  return {t:tt, cols:C.map(c=>Float64Array.from(c)), rate, notes, warns};
+}
+
+function defaultAxis(){
+  if(S.rawA.length<2) return 0;
+  let best=0, bv=0;
+  S.rawA.forEach((c,i)=>{ const m=Math.abs(mean(c)); if(m>bv){ bv=m; best=i; } });
+  return bv>5 ? best : 0;
+}
+function ingest(P, names, src, extraWarn, fileName){
+  resetData();
+  S.fileName=fileName||'';
+  S.rawT=P.t; S.rawA=P.cols; S.names=names; S.src=src;
+  S.rate=P.rate; S.fs=Math.max(20, Math.round(P.rate));
+  S.t0=P.t[0]; S.t1=P.t[P.t.length-1]; S.trim=[S.t0, S.t1];
+  S.loadWarn=[...P.warns, ...(extraWarn||[])];
+  S.fcMax=Math.min(10, Math.floor(S.fs*0.4*100)/100);
+  const sel=$('axis'); sel.innerHTML='';
+  names.forEach((nm,i)=>sel.add(new Option(nm, String(i))));
+  if(names.length===3) sel.add(new Option('Magnitude |a| (no sign)', 'mag'));
+  const da=defaultAxis();
+  sel.value=String(da); sel.disabled=names.length<2;
+  $('axisHint').textContent = names.length<2 ? 'Single-axis data.'
+    : (S.rawA.length>1 && Math.abs(mean(S.rawA[da]))>5 ? '"'+names[da]+'" selected automatically — it carries gravity, so it is the vertical axis.' : 'Pick the axis that points the way the structure moves — usually vertical.');
+  $('btnCsvOut').disabled=false;
+  setFc(S.fc);
+  syncTrimInputs();
+  setStatus(fileName ? fileName+' · '+src : src, P.rate, P.t.length, S.t1-S.t0);
+  process();
+  return P.notes;
+}
+
+function syncTrimInputs(){
+  const span=(S.t1-S.t0)||1;
+  const lo=Math.round((S.trim[0]-S.t0)/span*1000), hi=Math.round((S.trim[1]-S.t0)/span*1000);
+  $('trimLo').value=lo; $('trimHi').value=hi;
+  $('trimStart').value=+S.trim[0].toFixed(3);
+  $('trimEnd').value=+S.trim[1].toFixed(3);
+  $('trimRange').style.left=(lo/10)+'%';
+  $('trimRange').style.right=(100-hi/10)+'%';
+  $('trimInfo').textContent='Window '+(S.trim[1]-S.trim[0]).toFixed(2)+' s of '+(S.t1-S.t0).toFixed(2)+' s. Include a quiet moment before and after the event.';
+}
+function setTrim(lo, hi){
+  if(!S.rawT) return;
+  if(!isFinite(lo)) lo=S.trim[0];
+  if(!isFinite(hi)) hi=S.trim[1];
+  if(lo>hi) [lo,hi]=[hi,lo];
+  const minGap=(S.t1-S.t0)*0.01;
+  lo=Math.max(S.t0, Math.min(lo, S.t1-minGap));
+  hi=Math.min(S.t1, Math.max(hi, lo+minGap));
+  S.trim=[lo,hi];
+  S.view=null;
+  syncTrimInputs();
+}
+
+function mulberry32(a){ return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function makeTest(){
+  const fs=200, dur=60, N=fs*dur, f1=1.3, A=0.012, w=2*Math.PI*f1;
+  const rnd=mulberry32(12345);
+  const t=new Float64Array(N), ax=new Float64Array(N), ay=new Float64Array(N), az=new Float64Array(N);
+  const T1=15, T2=20, T3=40, T4=45, TR=T2-T1, K=Math.PI/TR;
+  for(let i=0;i<N;i++){
+    const tt=i/fs+(i?(rnd()-0.5)*0.2/fs:0); t[i]=tt;
+    let e=0, e1=0, e2=0;
+    if(tt>=T1 && tt<T2){ const u=K*(tt-T1); e=0.5-0.5*Math.cos(u); e1=0.5*K*Math.sin(u); e2=0.5*K*K*Math.cos(u); }
+    else if(tt>=T2 && tt<T3){ e=1; }
+    else if(tt>=T3 && tt<T4){ const u=K*(tt-T3); e=0.5+0.5*Math.cos(u); e1=-0.5*K*Math.sin(u); e2=-0.5*K*K*Math.cos(u); }
+    const s=Math.sin(w*tt), c=Math.cos(w*tt);
+    let acc=A*(e2*s+2*e1*w*c-e*w*w*s);
+    acc+=0.04*Math.sin(2*Math.PI*0.05*tt)+0.06+(rnd()-0.5)*0.05;
+    az[i]=9.81+acc; ay[i]=0.2*acc+(rnd()-0.5)*0.02; ax[i]=(rnd()-0.5)*0.03;
+  }
+  const P=prepare(Array.from(t), [ax,ay,az].map(c=>Array.from(c)));
+  ingest(P, ['X','Y','Z (vertical)'], 'test signal · 1.3 Hz / 12 mm');
+  toast('Test signal: quiet, then 1.3 Hz at 12 mm from 20 to 40 s, then quiet. Zoom to 20–40 s: amplitude should read ≈ 12 mm.');
+}
+
+function parseCSV(text, fileName){
+  text=text.replace(/^﻿/,'');
+  const lines=text.split(/\r\n|\n|\r/).filter(l=>l.trim().length);
+  if(!lines.length) throw new Error('The file is empty.');
+  const probe=lines.slice(0, 60);
+  const share=c=>probe.filter(l=>l.includes(c)).length/probe.length;
+  let sep;
+  if(share('\t')>=0.8) sep='\t';
+  else if(share(';')>=0.8) sep=';';
+  else if(share(',')>=0.8) sep=',';
+  else sep=/\s+/;
+  const decComma=(sep==='\t'||sep===';'||sep instanceof RegExp) && probe.some(l=>/\d,\d/.test(l));
+  const split=l=>{
+    const f=l.trim().split(sep).map(x=>x.trim().replace(/^"(.*)"$/,'$1').replace(/^'(.*)'$/,'$1').trim());
+    while(f.length && f[f.length-1]==='') f.pop();
+    return f;
+  };
+  const num=x=>{ if(x==='') return NaN; if(decComma) x=x.replace(',','.'); return Number(x); };
+  let header=null, ncols=0, skipped=0;
+  const T=[], C=[[],[],[]];
+  for(const l of lines){
+    const f=split(l);
+    const vals=f.map(num);
+    if(!ncols){
+      let lead=0; while(lead<vals.length && isFinite(vals[lead])) lead++;
+      if(lead>=2){ ncols=Math.min(lead, 4); }
+      else { if(!header && f.length>=2) header=f; continue; }
+    }
+    const use=vals.slice(0, ncols);
+    if(f.length<ncols || !use.every(isFinite)){ skipped++; continue; }
+    T.push(use[0]);
+    for(let k=1;k<ncols;k++) C[k-1].push(use[k]);
+  }
+  if(!ncols) throw new Error('No numeric data found. Expected columns: time (s), then 1–3 acceleration axes (m/s²).');
+  const nAx=ncols-1;
+  const names=[];
+  for(let k=0;k<nAx;k++){
+    const h=header && header[k+1];
+    names.push(h ? h : ['X','Y','Z'][k]);
+  }
+  const P=prepare(T, C.slice(0,nAx));
+  const w=[];
+  if(skipped) w.push(skipped+' row'+(skipped>1?'s':'')+' skipped — blank or non-numeric cells.');
+  const notes=ingest(P, names, 'CSV', w, fileName);
+  const extra=[...(decComma?['decimal commas read']:[]), ...notes];
+  toast('Loaded '+P.t.length.toLocaleString()+' rows, '+nAx+(nAx>1?' axes':' axis')+'.'+(extra.length?' Note: '+extra.join('; ')+'.':''));
+}
+
+function goproAxisNames(name){
+  const m=/\(([^)]*)\)/.exec(name||'');
+  const parts=m ? m[1].split(',').map(s=>s.trim()).filter(Boolean) : [];
+  return [0,1,2].map(i=>'Axis '+(i+1)+(parts.length===3?' · '+parts[i]:''));
+}
+async function loadMp4(file){
+  toast('Extracting GPMF telemetry… (first load fetches the parser)');
+  $('busy').hidden=false;
+  let gpmfExtract, goproTelemetry;
+  try{
+    gpmfExtract=(await import('https://esm.sh/gpmf-extract@0.3.3')).default;
+    goproTelemetry=(await import('https://esm.sh/gopro-telemetry@1.2.11')).default;
+  }catch(e){
+    $('busy').hidden=true;
+    failLoad('Could not load the GoPro parser. Open this page through a local server (python -m http.server 8000) with internet access.');
+    return;
+  }
+  try{
+    const extracted=await gpmfExtract(file, {browserMode:true});
+    const tele=await goproTelemetry(extracted, {stream:['ACCL']});
+    let st=null;
+    for(const dev of Object.values(tele)){
+      const streams=dev.streams||{};
+      for(const key of Object.keys(streams)){
+        if(/ACCL/i.test(key) || /accel/i.test(streams[key].name||'')){ st=streams[key]; break; }
+      }
+      if(st) break;
+    }
+    const samples=st && st.samples;
+    if(!samples || !samples.length) throw new Error('No accelerometer (ACCL) data found in this file.');
+    const t=[], x=[], y=[], z=[];
+    for(const s of samples){
+      const v=s.value;
+      if(!Array.isArray(v) || v.length<3 || typeof s.cts!=='number') continue;
+      t.push(s.cts/1000); x.push(v[0]); y.push(v[1]); z.push(v[2]);
+    }
+    const P=prepare(t, [x,y,z]);
+    const notes=ingest(P, goproAxisNames(st.name), 'GoPro ACCL', [], file.name);
+    attachVideo(file);
+    toast('Extracted '+P.t.length.toLocaleString()+' ACCL samples.'+(notes.length?' Note: '+notes.join('; ')+'.':''));
+  }catch(e){
+    failLoad('GoPro extraction failed: '+e.message);
+  }finally{
+    $('busy').hidden=true;
+  }
+}
+
+function baseName(){ return (S.fileName||'test_signal').replace(/\.[^.]+$/,'').replace(/[^\w.-]+/g,'_'); }
+function downloadCSV(){
+  if(!S.t){ toast('Nothing to export yet.', true); return; }
+  const rows=['time_s,accel_ms2,velocity_ms,displacement_mm'];
+  for(let i=0;i<S.t.length;i++)
+    rows.push(S.t[i].toFixed(6)+','+S.a[i].toFixed(6)+','+S.v[i].toFixed(7)+','+(S.d[i]*1000).toFixed(5));
+  const blob=new Blob([rows.join('\n')+'\n'],{type:'text/csv'});
+  const u=URL.createObjectURL(blob), link=document.createElement('a');
+  link.href=u; link.download='trace_'+baseName()+'_processed.csv';
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(()=>URL.revokeObjectURL(u), 10000);
+}
+
+/* ---------- video ---------- */
+const V={el:$('vid'), url:null, offset:0, fps:30, raf:0, dts:[], drag:false};
+const vidOn=()=>!!V.url;
+const dataTime=()=>V.el.currentTime+V.offset;
+const PLAY_IC='<path d="M4 2l10 6-10 6z"/>', PAUSE_IC='<path d="M3 2h4v12H3zM9 2h4v12H9z"/>';
+function detachVideo(){
+  const v=V.el;
+  cancelAnimationFrame(V.raf);
+  try{ v.pause(); }catch(e){}
+  if(V.url){ if(V.url.startsWith('blob:')) URL.revokeObjectURL(V.url); V.url=null; }
+  v.removeAttribute('src'); v.load();
+  $('vidGroup').hidden=true; $('playhead').hidden=true; $('vidMsg').hidden=true;
+  V.dts=[]; V.fps=30; V.offset=0; $('vOffset').value=0;
+  document.body.classList.remove('vid-big'); $('vBig').textContent='Enlarge';
+}
+function attachVideo(src){
+  detachVideo();
+  V.url=(typeof src==='string') ? src : URL.createObjectURL(src);
+  const v=V.el;
+  v.src=V.url;
+  v.volume=+$('vVol').value;
+  v.playbackRate=+$('vRate').value;
+  $('vidGroup').hidden=false; $('vidGroup').open=true;
+  updatePlayhead();
+}
+function vidMsg(m){ const el=$('vidMsg'); el.textContent=m||''; el.hidden=!m; }
+function seekData(t){
+  if(!vidOn()) return;
+  const v=V.el, d=isFinite(v.duration)?v.duration:Infinity;
+  v.currentTime=Math.max(0, Math.min(d, t-V.offset));
+  updatePlayhead();
+}
+function stepFrame(k){
+  if(!vidOn()) return;
+  V.el.pause();
+  seekData(dataTime()+k/V.fps);
+}
+function updatePlayhead(){
+  const ph=$('playhead'), lab=$('vTime');
+  if(!vidOn()){ ph.hidden=true; return; }
+  const t=dataTime();
+  const inWin=S.d && t>=S.t[0]-1e-9 && t<=S.t[S.t.length-1]+1e-9;
+  lab.textContent=t.toFixed(2)+' s'+(S.d && !inWin?' · outside window':'');
+  lab.classList.toggle('out', !!S.d && !inWin);
+  if(!S.d || !inWin){ ph.hidden=true; return; }
+  if(!V.el.paused && !V.drag && $('vFollow').checked && S.view){
+    const [a,b]=S.view, sp=b-a;
+    if(t>b-0.02*sp || t<a) setStackView([t-0.1*sp, t+0.9*sp]);
+  }
+  const gd=$('stack'), fl=gd._fullLayout;
+  if(!fl || !fl._size){ ph.hidden=true; return; }
+  const [r0,r1]=S.view||stackFull();
+  if(t<r0 || t>r1){ ph.hidden=true; return; }
+  const s=fl._size;
+  ph.hidden=false;
+  ph.style.left=(gd.offsetLeft+s.l+(t-r0)/(r1-r0)*s.w)+'px';
+  ph.style.top=(gd.offsetTop+s.t)+'px';
+  ph.style.height=s.h+'px';
+  $('phLabel').textContent=t.toFixed(2)+' s';
+}
+function playLoop(){
+  updatePlayhead();
+  if(!V.el.paused && !V.el.ended) V.raf=requestAnimationFrame(playLoop);
+}
+function setPlayIcon(){ $('vPlayIc').innerHTML=V.el.paused?PLAY_IC:PAUSE_IC; }
+function togglePlay(){
+  if(!vidOn()) return;
+  const v=V.el;
+  if(v.paused){ const p=v.play(); if(p && p.catch) p.catch(()=>vidMsg('This browser cannot play this video.')); }
+  else v.pause();
+}
+function trackFps(){
+  if(!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return;
+  let last=null;
+  const cb=(now, md)=>{
+    if(last!==null){
+      const d=md.mediaTime-last;
+      if(d>0.004 && d<0.2){ V.dts.push(d); if(V.dts.length>60) V.dts.shift();
+        const srt=[...V.dts].sort((a,b)=>a-b), f=1/srt[srt.length>>1];
+        const std=[23.976,24,25,29.97,30,48,50,59.94,60,90,100,119.88,120,240].reduce((best,r)=>Math.abs(f/r-1)<0.02 && (!best || Math.abs(f/r-1)<Math.abs(f/best-1)) ? r : best, 0);
+        V.fps=std||f; }
+    }
+    last=md.mediaTime;
+    if(vidOn()) V.el.requestVideoFrameCallback(cb);
+  };
+  V.el.requestVideoFrameCallback(cb);
+}
+(function wireVideo(){
+  const v=V.el;
+  v.addEventListener('play', ()=>{ setPlayIcon(); cancelAnimationFrame(V.raf); V.raf=requestAnimationFrame(playLoop); });
+  v.addEventListener('pause', ()=>{ setPlayIcon(); updatePlayhead(); });
+  v.addEventListener('ended', ()=>{ setPlayIcon(); updatePlayhead(); });
+  ['seeked','timeupdate','loadedmetadata'].forEach(e=>v.addEventListener(e, updatePlayhead));
+  v.addEventListener('loadedmetadata', ()=>{
+    vidMsg(v.videoWidth ? '' : 'No picture: this browser cannot decode this video format (often H.265/HEVC). Sound and the data still work. Try Chrome, Edge or Safari.');
+    trackFps();
+  });
+  v.addEventListener('error', ()=>{ if(vidOn()) vidMsg('This browser cannot play this video format (often H.265/HEVC). The data still work. Try Chrome, Edge or Safari.'); });
+  v.addEventListener('click', togglePlay);
+  $('vPlay').onclick=togglePlay;
+  $('vBack').onclick=()=>stepFrame(-1);
+  $('vFwd').onclick=()=>stepFrame(1);
+  $('vRate').onchange=()=>{ v.playbackRate=+$('vRate').value; };
+  $('vVol').oninput=()=>{ v.volume=+$('vVol').value; if(v.muted && v.volume>0) v.muted=false; setMuteIcon(); };
+  $('vMute').onclick=()=>{ v.muted=!v.muted; setMuteIcon(); };
+  $('vOffset').onchange=()=>{ let o=parseFloat($('vOffset').value); if(!isFinite(o)) o=0; o=Math.max(-5, Math.min(5, o)); $('vOffset').value=o; V.offset=o; updatePlayhead(); };
+  $('vBig').onclick=()=>{
+    const big=document.body.classList.toggle('vid-big');
+    $('vBig').textContent=big?'Shrink':'Enlarge';
+    requestAnimationFrame(()=>{ if(S.d){ Plotly.Plots.resize('stack'); if(S.spec) Plotly.Plots.resize('spectrum'); } updatePlayhead(); });
+  };
+  $('vStart').onclick=()=>{ if(!S.rawT) return; setTrim(dataTime(), S.trim[1]); schedule(); toast('Event window start set to '+S.trim[0].toFixed(2)+' s.'); };
+  $('vEnd').onclick=()=>{ if(!S.rawT) return; setTrim(S.trim[0], dataTime()); schedule(); toast('Event window end set to '+S.trim[1].toFixed(2)+' s.'); };
+  const ph=$('playhead');
+  ph.addEventListener('pointerdown', e=>{ if(e.button>0) return; e.preventDefault(); ph.setPointerCapture(e.pointerId); V.drag=true; V.wasPlaying=!v.paused; v.pause(); });
+  ph.addEventListener('pointermove', e=>{ if(V.drag) seekData(pxToData(CTL.stack, e.clientX)); });
+  const end=()=>{ if(!V.drag) return; V.drag=false; if(V.wasPlaying) togglePlay(); };
+  ph.addEventListener('pointerup', end); ph.addEventListener('pointercancel', end);
+  document.addEventListener('keydown', e=>{
+    if(!vidOn() || e.ctrlKey || e.metaKey || e.altKey) return;
+    const tg=e.target.tagName;
+    if(tg==='INPUT' || tg==='SELECT' || tg==='TEXTAREA' || (tg==='BUTTON' && e.code==='Space')) return;
+    if(e.code==='Space'){ e.preventDefault(); togglePlay(); }
+    else if(e.code==='ArrowLeft'){ e.preventDefault(); stepFrame(-1); }
+    else if(e.code==='ArrowRight'){ e.preventDefault(); stepFrame(1); }
+  });
+})();
+function setMuteIcon(){
+  const m=V.el.muted||V.el.volume===0;
+  $('vMuteIc').innerHTML='<path d="M2 6h3l4-3v10l-4-3H2z"/>'+(m?'<path d="M11 5.5l4 5M15 5.5l-4 5" stroke="currentColor" stroke-width="1.4"/>':'<path d="M11 5.5a3.5 3.5 0 010 5M12.5 3.5a6 6 0 010 9" stroke="currentColor" stroke-width="1.3" fill="none"/>');
+}
+
+/* ---------- UI wiring ---------- */
+let toastTimer;
+function toast(msg, err){
+  const el=$('toast');
+  el.textContent=msg; el.className='toast show'+(err?' err':'');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.className='toast', err?7000:5000);
+}
+const isLive=()=>S.rawT && S.rawT.length<=LIVE_LIMIT;
+
+$('btnMp4').onclick=()=>$('fileMp4').click();
+$('btnCsv').onclick=()=>$('fileCsv').click();
+$('btnTest').onclick=makeTest;
+$('btnCsvOut').onclick=downloadCSV;
+$('fileMp4').onchange=e=>{ const f=e.target.files[0]; e.target.value=''; if(f) loadMp4(f); };
+$('fileCsv').onchange=e=>{
+  const f=e.target.files[0]; e.target.value='';
+  if(!f) return;
+  $('busy').hidden=false;
+  const r=new FileReader();
+  r.onload=()=>{ setTimeout(()=>{ try{ parseCSV(r.result, f.name); }catch(err){ failLoad(err.message); } $('busy').hidden=true; },0); };
+  r.onerror=()=>{ $('busy').hidden=true; failLoad('Could not read the file.'); };
+  r.readAsText(f);
+};
+
+document.querySelectorAll('.seg').forEach(seg=>{
+  seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    seg.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', String(x===b)));
+    if(seg.id==='method'){
+      const f=b.dataset.v==='freq';
+      $('methodHint').textContent=f
+        ? 'Frequency: FFT, divide by (i·2πf)², zero everything below the cutoff. If Time gives about the same size, trust the result.'
+        : 'Time: zero-phase high-pass, then trapezoid integration. If Frequency gives about the same size, trust the result.';
+      $('reHp').disabled=f;
+      schedule();
+    } else {
+      $('segLen').disabled=b.dataset.v!=='welch';
+      if(S.a) drawSpectrum();
+    }
+  });
+});
+
+$('fcRange').addEventListener('input',()=>{ setFc(fcFromPos(+$('fcRange').value), true); if(isLive()) schedule(); });
+$('fcRange').addEventListener('change',()=>schedule());
+$('btnFcPeak').onclick=()=>{ if(S.fPeak){ setFc(S.fPeak/3); schedule(); } };
+$('ordRange').addEventListener('input',()=>{ $('ordVal').textContent=$('ordRange').value; if(isLive()) schedule(); });
+$('ordRange').addEventListener('change',()=>schedule());
+['axis','calScale','calBias','reHp'].forEach(id=>$(id).addEventListener('change',()=>schedule()));
+
+$('specSrc').addEventListener('change',()=>{ if(S.a) drawSpectrum(); });
+$('specLog').addEventListener('change',()=>{ if(S.a) drawSpectrum(); });
+$('segLen').addEventListener('input',()=>{ $('segVal').textContent=Math.pow(2,+$('segLen').value); if(S.a) drawSpectrum(); });
+
+const trimLo=$('trimLo'), trimHi=$('trimHi');
+function trimFromSliders(which){
+  if(!S.rawT) return;
+  let lo=+trimLo.value, hi=+trimHi.value;
+  if(which==='lo' && lo>hi-10){ lo=hi-10; trimLo.value=lo; }
+  if(which==='hi' && hi<lo+10){ hi=lo+10; trimHi.value=hi; }
+  const span=S.t1-S.t0;
+  setTrim(S.t0+lo/1000*span, S.t0+hi/1000*span);
+}
+trimLo.addEventListener('input',()=>{ trimFromSliders('lo'); if(isLive()) schedule(); });
+trimHi.addEventListener('input',()=>{ trimFromSliders('hi'); if(isLive()) schedule(); });
+trimLo.addEventListener('change',()=>schedule());
+trimHi.addEventListener('change',()=>schedule());
+$('trimStart').addEventListener('change',()=>{ setTrim(parseFloat($('trimStart').value), S.trim[1]); schedule(); });
+$('trimEnd').addEventListener('change',()=>{ setTrim(S.trim[0], parseFloat($('trimEnd').value)); schedule(); });
+$('btnTrimReset').onclick=()=>{ if(S.rawT){ setTrim(S.t0, S.t1); schedule(); } };
+$('btnTrimZoom').onclick=()=>{
+  if(!S.d){ toast('Load data first.', true); return; }
+  if(!S.view){ toast('Stretch or zoom the graph to the event first, then click.', true); return; }
+  setTrim(S.view[0], S.view[1]); schedule();
+  toast('Event window set from plot zoom.');
+};
+$('yLock').addEventListener('change',()=>{ if(S.d) renderStack(); });
+attachView(CTL.stack);
+attachView(CTL.spec);
+
+setFc(0.30);
+</script>
+</body>
+</html>
