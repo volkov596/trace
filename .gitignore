@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Editor temp files
+*.swp
+*~
+.vscode/
+.idea/
+
+# Local dev / test files
+*.local.html
+*.test.html
+*.bak
+*.orig
+
+# Recordings and exports
+*.mp4
+*.MP4
+*.LRV
+*.THM
+trace_*_processed.csv
+trace_*.png
+
+# Node / Playwright
+node_modules/
+npm-debug.log
+test-results/
+playwright-report/
